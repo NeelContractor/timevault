@@ -11,7 +11,8 @@ The project consists of two main components:
 - Written in Rust
 - Handles the core blockchain functionality
 
-### Frontend (`timevault_fe/`)
+### Frontend (`timevault_frontend/`)
+- It is in different repo
 - Next.js application with TypeScript
 - Styled with Tailwind CSS
 - Provides the user interface for interacting with the smart contracts
