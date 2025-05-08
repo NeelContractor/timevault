@@ -12,7 +12,8 @@ The project consists of two main components:
 - Handles the core blockchain functionality
 
 ### Frontend (`timevault_frontend/`)
-- It is in different repo
+- It is in different repo Link: 
+    [timevault_frontend](https://github.com/NeelContractor/timevault_frontend)
 - Next.js application with TypeScript
 - Styled with Tailwind CSS
 - Provides the user interface for interacting with the smart contracts
