@@ -1,86 +1,95 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
-import { Timevault } from "../target/types/timevault";
-import { PublicKey, SystemProgram } from "@solana/web3.js";
 import { assert, expect } from "chai";
+import { Timevault } from "../target/types/timevault";
 
 describe("timevault", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
 
   const program = anchor.workspace.Timevault as Program<Timevault>;
+  const user = provider.wallet;
 
-  let capsulePda: PublicKey;
+  const title = "My First Capsule";
+  const contentType = "text/plain";
+  const contentUri = "ipfs://fakehash123";
+
+  let unlockTime: number;
+  let capsulePda: anchor.web3.PublicKey;
   let bump: number;
-  const creator = provider.wallet.publicKey;
 
-  const unlockInSeconds = 5;
-  const now = Math.floor(Date.now() / 1000);
-  const unlockTimestamp = now + unlockInSeconds;
-  const title = "First title"
+  it("Creates a time capsule", async () => {
+    // Set unlock time to 10 seconds in the future
+    const now = Math.floor(Date.now() / 1000);
+    unlockTime = now + 10;
 
-  it("Create a capsule", async () => {
-    [capsulePda, bump] = PublicKey.findProgramAddressSync(
+    // Derive PDA
+    [capsulePda, bump] = anchor.web3.PublicKey.findProgramAddressSync(
       [
         Buffer.from("capsule"),
-        creator.toBuffer(),
-        new anchor.BN(unlockTimestamp).toArrayLike(Buffer, "le", 8),
+        user.publicKey.toBuffer(),
+        new anchor.BN(unlockTime).toArrayLike(Buffer, "le", 8),
       ],
       program.programId
     );
 
+    // Send transaction
     await program.methods
       .createCapsule(
-        new anchor.BN(unlockTimestamp),
+        new anchor.BN(unlockTime),
         title,
-        "ipfs://dummyhash",
-        "text"
+        contentType,
+        contentUri
       )
       .accounts({
+        user: user.publicKey,
         capsule: capsulePda,
-        user: creator,
-        systemProgram: SystemProgram.programId
-      } as any)
+        systemProgram: anchor.web3.SystemProgram.programId,
+      }as any)
       .rpc();
 
-      const capsule = await program.account.timeCapsule.fetch(capsulePda);
-      console.log(capsule);
-      assert.equal(capsule.creator.toBase58(), creator.toBase58());
-      assert.equal(capsule.isUnlocked, false);
+    const capsule = await program.account.timeCapsule.fetch(capsulePda);
+
+    assert.equal(capsule.creator.toBase58(), user.publicKey.toBase58());
+    assert.equal(capsule.title, title);
+    assert.equal(capsule.contentType, contentType);
+    assert.equal(capsule.contentUri, contentUri);
+    assert.equal(capsule.isUnlocked, false);
   });
 
-  it("Fails to unlock before unlockTimestamp", async() => {
+  it("Fails to open capsule before unlock time", async () => {
     try {
       await program.methods
         .openCapsule()
         .accounts({
+          creator: user.publicKey,
           capsule: capsulePda,
-          creator,
-          clock: anchor.web3.SYSVAR_CLOCK_PUBKEY
-        } as any)
+          clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
+        }as any)
         .rpc();
-        const capsule = await program.account.timeCapsule.fetch(capsulePda);
-        console.log(capsule)
-        assert.fail("Capsule unlocked too early!");
+
+      assert.fail("Should have thrown UnlockTooEarly error");
     } catch (err) {
-      assert.ok(err.message.includes("UnlockTooEarly"));
+      const anchorErr = err as anchor.AnchorError;
+      expect(anchorErr.error.errorCode.code).to.equal("UnlockTooEarly");
     }
   });
 
-  it("Unlocks capsule after unlockTimestamp", async() => {
-    await new Promise((resolve) => setTimeout(resolve, unlockInSeconds * 1000 + 6000));
+  it("Opens capsule after unlock time", async () => {
+    // Wait for unlock time
+    console.log("Waiting for capsule to unlock...");
+    await new Promise((resolve) => setTimeout(resolve, 20_000));
 
     await program.methods
       .openCapsule()
       .accounts({
+        creator: user.publicKey,
         capsule: capsulePda,
-        creator,
-        clock: anchor.web3.SYSVAR_CLOCK_PUBKEY
-      } as any)
+        clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
+      }as any)
       .rpc();
 
-      const capsule = await program.account.timeCapsule.fetch(capsulePda);
-      console.log(capsule)
-      assert.equal(capsule.isUnlocked, true);
-  })
+    const capsule = await program.account.timeCapsule.fetch(capsulePda);
+    assert.equal(capsule.isUnlocked, true);
+  });
 });
